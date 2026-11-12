@@ -2,7 +2,9 @@
 
 A real-time AI copilot for Windows calls and presentations. It sits on top of your screen, listens to the call, can see your screen, knows your background from files you upload, and suggests what to say. A switch on the overlay decides whether people in your screen share can see it.
 
-This page only holds the installers. To download, open **[Releases](../../releases/latest)** and download `Veil-Setup-<version>.exe`.
+**[Download Veil for Windows](https://github.com/NdireS/veil-releases/releases/latest/download/Veil-Setup.exe)**. This link always gives the newest version.
+
+This page holds only the installers and these instructions. The "Source code" files GitHub adds to each release contain only this page.
 
 ## Install
 
