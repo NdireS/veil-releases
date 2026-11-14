@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Veil: walk into every call ready</title>
+<meta name="description" content="Veil is a quiet assistant for Windows that listens to your call, answers in seconds, and stays out of your screen share.">
+<meta name="theme-color" content="#0B0C0E">
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="preload" as="image" href="img/hero.jpg">
+<!-- Apple devices use San Francisco (the iOS font). Other devices get Inter, the closest free match. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@600;700&display=swap" rel="stylesheet">
+<style>
+/* ---------- brand tokens ---------- */
+:root {
+  --ink: #0B0C0E;          /* page */
+  --ink-2: #131518;        /* raised */
+  --ink-3: #1B1E22;        /* floating */
+  --bone: #F4EFE6;         /* text */
+  --muted: #A9A49B;
+  --line: rgba(244, 239, 230, 0.12);
+  --honey: #F2B84B;        /* the brand colour */
+  --honey-hi: #F8CE7A;
+  --honey-ink: #1B1405;    /* text on honey */
+  --live: #FF6B5E;
+  --safe: #5AD27F;
+
+  --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter Tight", "Segoe UI", system-ui, sans-serif;
+  --text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+
+  --s1: 0.5rem; --s2: 1rem; --s3: 1.5rem; --s4: 2.5rem; --s5: 4rem; --s6: 7rem;
+  --gutter: clamp(1.25rem, 4vw, 4.5rem);
+  --r-sm: 0.75rem; --r-md: 1.25rem; --r-lg: 2rem; --r-pill: 999px;
+  --spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-float: 0 1px 1px rgba(0,0,0,.3), 0 12px 28px -8px rgba(0,0,0,.55), 0 40px 80px -24px rgba(242,184,75,.14);
+
+  /* liquid glass defaults (see the glass block below) */
+  --g-blur: 16px; --g-sat: 120%; --g-bright: 1.02;
+  --g-fill: hsla(0,0%,95%,.04); --g-edge: hsla(0,0%,95%,.2); --g-hi: hsla(0,0%,100%,.1);
+  --g-ring: 0px; --g-inner: hsla(0,0%,100%,0);
+}
+
+/* Everything is sized in rem, and rem grows with the window, so wide screens are filled instead of leaving side gaps. */
+html { font-size: clamp(16px, 0.42vw + 11px, 23px); scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--ink); color: var(--bone); font-family: var(--text); line-height: 1.7; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+img { display: block; max-width: 100%; }
+a { color: inherit; }
+h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; letter-spacing: -0.025em; word-spacing: 0.06em; line-height: 1.04; text-wrap: balance; }
+h1 { font-size: clamp(2.6rem, 5.6vw, 6rem); }
+h2 { font-size: clamp(2rem, 3.8vw, 4rem); }
+h3 { font-size: 1.35rem; letter-spacing: -0.02em; line-height: 1.2; }
+.wrap { width: calc(100% - 2 * var(--gutter)); max-width: 2200px; margin-inline: auto; }
+.eyebrow { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--honey); }
+.lede { font-size: clamp(1.05rem, 1.25vw, 1.3rem); color: var(--muted); max-width: 34em; }
+.skip { position: absolute; left: -999px; top: 0; background: var(--honey); color: var(--honey-ink); padding: var(--s1) var(--s2); z-index: 100; border-radius: var(--r-sm); }
+.skip:focus { left: var(--s2); top: var(--s2); }
+:focus-visible { outline: 2px solid var(--honey); outline-offset: 3px; border-radius: 6px; }
+
+/* film grain over the whole page */
+body::after { content: ""; position: fixed; inset: 0; z-index: 90; pointer-events: none; opacity: .07; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+/* ---------- liquid glass, CSS tier ----------
+   Adapted from src/landing.css in https://github.com/Miftahul-Islam-Efaz/LIQUID-GLASS (Miftahul Islam Efaz). */
+.glass { position: relative; isolation: isolate; background: var(--g-fill); border: 1px solid var(--g-edge);
+  -webkit-backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat)) brightness(var(--g-bright));
+  backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat)) brightness(var(--g-bright)); }
+.glass-scope:not(.glass-live) .glass { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.glass::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(to bottom, var(--g-hi), hsla(0,0%,100%,0) 42%); pointer-events: none; z-index: -1; }
+.glass::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 var(--g-ring) var(--g-inner); pointer-events: none; }
+[data-preset="frosted"] { --g-blur: 40px; --g-sat: 100%; --g-bright: 1.12; --g-fill: hsla(0,0%,95%,.12); --g-edge: hsla(0,0%,95%,.22); --g-hi: hsla(0,0%,100%,.16); --g-ring: 1px; --g-inner: hsla(0,0%,100%,.12); }
+[data-preset="droplet"] { --g-blur: 6px; --g-sat: 170%; --g-bright: 1.06; --g-fill: hsla(0,0%,95%,.04); --g-edge: hsla(0,0%,95%,.4); --g-hi: hsla(0,0%,100%,.28); --g-ring: 3px; --g-inner: hsla(0,0%,100%,.26); }
+[data-preset="subtle"] { --g-blur: 14px; --g-sat: 105%; --g-bright: .98; --g-fill: hsla(0,0%,95%,.05); --g-edge: hsla(0,0%,95%,.1); --g-hi: hsla(0,0%,100%,.05); }
+[data-preset="smoke"] { --g-blur: 26px; --g-sat: 60%; --g-bright: .6; --g-fill: hsla(30,8%,5%,.55); --g-edge: hsla(0,0%,95%,.14); --g-hi: hsla(0,0%,100%,.05); }
+.lite [data-preset="frosted"], .lite [data-preset="smoke"] { --g-blur: 10px; }
+.lite [data-preset="subtle"] { --g-blur: 6px; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .glass { background: hsla(30,6%,8%,.9); } }
+@media (prefers-reduced-transparency: reduce) { .glass { background: hsla(30,6%,8%,.92); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+/* ---------- buttons ---------- */
+.btn { display: inline-flex; align-items: center; gap: .6rem; min-height: 2.9rem; padding: .7rem 1.4rem; border-radius: var(--r-pill); font: 600 1rem/1 var(--text); text-decoration: none; cursor: pointer; border: 0;
+  transition: transform .35s var(--spring), background-color .2s, box-shadow .35s var(--spring); }
+.btn-primary { background: var(--honey); color: var(--honey-ink); box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 10px 30px -10px rgba(242,184,75,.7); }
+.btn-primary:hover { background: var(--honey-hi); transform: translateY(-2px); box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 18px 40px -12px rgba(242,184,75,.8); }
+.btn-primary:active { transform: translateY(0) scale(.98); }
+.btn-ghost { color: var(--bone); border-radius: var(--r-pill); }
+.btn-ghost:hover { transform: translateY(-2px); --g-fill: hsla(0,0%,95%,.12); }
+.btn-ghost:active { transform: scale(.98); }
+.btn svg { width: 1.1rem; height: 1.1rem; flex: none; }
+
+/* ---------- nav ---------- */
+.nav { position: fixed; z-index: 50; top: var(--s2); left: 50%; transform: translateX(-50%); width: calc(100% - 2 * var(--gutter)); max-width: 2200px;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: .5rem .5rem .5rem 1.1rem; border-radius: var(--r-pill); border: 1px solid transparent; }
+.nav:not(.glass) { background: transparent; }
+.brand { display: inline-flex; align-items: center; gap: .6rem; font: 700 1.15rem/1 var(--display); letter-spacing: -0.02em; text-decoration: none; }
+.brand img { width: 1.7rem; height: 1.7rem; }
+.nav-links { display: none; gap: var(--s3); list-style: none; margin: 0; padding: 0; font-size: .92rem; font-weight: 500; }
+.nav-links a { text-decoration: none; color: var(--bone); opacity: .78; padding: .5rem 0; transition: opacity .2s; }
+.nav-links a:hover, .nav-links a:focus-visible { opacity: 1; }
+.nav-links a:active { opacity: .6; }
+.nav .btn { min-height: 2.5rem; padding: .55rem 1.1rem; font-size: .92rem; }
+@media (min-width: 820px) { .nav-links { display: flex; } }
+
+/* ---------- hero ---------- */
+.hero { position: relative; min-height: 100svh; display: grid; align-items: end; overflow: hidden; }
+.hero-photo { position: absolute; inset: -6% 0; z-index: -2; will-change: transform; }
+.hero-photo img { width: 100%; height: 100%; object-fit: cover; object-position: 62% 0%; }
+@media (min-width: 1000px) { .hero-photo img { object-position: 72% 40%; } }
+.hero::before { content: ""; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(to top, var(--ink) 4%, rgba(11,12,14,.55) 45%, rgba(11,12,14,.25) 100%),
+              radial-gradient(120% 90% at 0% 60%, rgba(11,12,14,.9), transparent 62%),
+              linear-gradient(rgba(242,184,75,.10), rgba(242,184,75,.10)); background-blend-mode: normal, normal, multiply; }
+.hero-in { display: grid; gap: var(--s4); padding-block: 44svh var(--s5); align-items: end; }
+.hero .veil-ui { display: none; }
+.hero-copy { display: grid; gap: var(--s3); max-width: 44rem; }
+.hero-copy h1 em { font-style: normal; color: var(--honey); }
+.cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.fine { font-size: .85rem; color: var(--muted); }
+@media (min-width: 1000px) { .hero-in { grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); padding-block: 7rem var(--s6); } .hero .veil-ui { display: grid; } }
+
+/* the Veil overlay, drawn in HTML */
+.veil-ui { display: grid; gap: .6rem; justify-items: center; width: 100%; max-width: 27rem; margin-inline: auto; font-size: .82rem; line-height: 1.45; }
+.pill { display: inline-flex; align-items: center; gap: .85em; padding: .55em 1.1em; border-radius: var(--r-pill); white-space: nowrap; box-shadow: var(--shadow-float); }
+.pill img { width: 1.4em; height: 1.4em; }
+.pill .sw { display: inline-flex; align-items: center; gap: .5em; color: var(--safe); font-weight: 600; }
+.pill .sw i { width: 1.95em; height: 1.1em; border-radius: 999px; background: var(--safe); position: relative; }
+.pill .sw i::after { content: ""; position: absolute; top: .15em; right: .15em; width: .8em; height: .8em; border-radius: 50%; background: #fff; }
+.pill .rec { display: inline-flex; align-items: center; gap: .5em; }
+.pill .rec::before { content: ""; width: .6em; height: .6em; border-radius: 50%; background: var(--live); animation: pulse 1.6s ease-in-out infinite; }
+.card { width: 100%; padding: 1.2em 1.35em; border-radius: var(--r-md); box-shadow: var(--shadow-float); text-align: left; }
+.card .q { color: var(--muted); font-size: .95em; margin-bottom: .6em; }
+.card ul { margin: 0; padding: 0; list-style: none; display: grid; gap: .55em; }
+.card li { padding-left: 1.2em; position: relative; }
+.card li::before { content: ""; position: absolute; left: 0; top: .55em; width: .42em; height: .42em; border-radius: 50%; background: var(--honey); }
+.card b { color: var(--honey-hi); font-weight: 600; }
+.tag { display: inline-block; margin-bottom: .6em; padding: .1em .65em; border-radius: 999px; background: rgba(242,184,75,.16); color: var(--honey-hi); font-size: .88em; font-weight: 600; }
+.hero .card li { opacity: 0; animation: line 10s var(--spring) infinite; }
+.hero .card li:nth-child(2) { animation-delay: .7s; } .hero .card li:nth-child(3) { animation-delay: 1.4s; }
+@keyframes line { 0% { opacity: 0; transform: translateY(.5rem); } 8%, 86% { opacity: 1; transform: none; } 94%, 100% { opacity: 0; transform: none; } }
+@keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+.hero .veil-ui { animation: float 7s ease-in-out infinite; }
+@keyframes float { 50% { transform: translateY(-.5rem); } }
+
+/* ---------- proof strip ---------- */
+.strip { border-block: 1px solid var(--line); background: var(--ink-2); }
+.strip ul { list-style: none; margin: 0; padding: var(--s3) 0; display: grid; gap: var(--s2) var(--s4); grid-template-columns: repeat(2, 1fr); }
+.strip li { display: grid; gap: .1rem; }
+.strip strong { font: 700 clamp(1.3rem, 2vw, 2rem)/1.1 var(--display); letter-spacing: -0.02em; }
+.strip span { color: var(--muted); font-size: .88rem; }
+@media (min-width: 820px) { .strip ul { grid-template-columns: repeat(4, 1fr); } }
+
+/* ---------- the film: one pinned screen, four scenes, driven by scroll ---------- */
+.film { position: relative; height: 420vh; }
+.film-pin { position: sticky; top: 0; height: 100svh; display: grid; align-content: center; gap: var(--s3); padding-block: 5rem var(--s3); }
+.film-pin::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 100vw; margin-left: -50vw; z-index: -1; background:
+  radial-gradient(50% 60% at 78% 45%, rgba(242,184,75,.16), transparent 70%),
+  radial-gradient(40% 50% at 12% 80%, rgba(255,107,94,.07), transparent 70%); }
+.film-text { position: relative; min-height: 15.5rem; }
+.step { position: absolute; inset: 0; display: grid; gap: var(--s2); align-content: start; opacity: 0; transform: translateY(1.5rem); transition: opacity .5s var(--spring), transform .7s var(--spring); pointer-events: none; }
+.step .lede { font-size: 1rem; }
+.rail { display: none; }
+.stage { position: relative; width: 100%; max-height: 48svh; aspect-ratio: 1 / 1; margin-inline: auto; border-radius: var(--r-lg); overflow: hidden; background: var(--ink-3); border: 1px solid var(--line);
+  box-shadow: 0 2px 2px rgba(0,0,0,.4), 0 40px 90px -30px rgba(0,0,0,.9), 0 60px 140px -50px rgba(242,184,75,.22);
+  transform: perspective(1600px) rotateX(calc((1 - var(--enter, 1)) * 14deg)) scale(calc(.9 + var(--enter, 1) * .1)); transform-origin: 50% 100%; }
+.call-main { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 22%; transform: scale(calc(1.02 + var(--p, 0) * .06)); }
+.stage::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(11,12,14,.75), transparent 45%), linear-gradient(rgba(242,184,75,.12), rgba(242,184,75,.12)); mix-blend-mode: multiply; pointer-events: none; }
+.call-top, .call-bottom { position: absolute; left: 0; right: 0; z-index: 2; display: flex; align-items: center; gap: .5rem; padding: .7rem 1rem; font-size: .72rem; color: rgba(244,239,230,.8); }
+.call-top { top: 0; } .call-bottom { bottom: 0; justify-content: center; gap: .6rem; }
+.call-bottom i { width: 1.9rem; height: 1.9rem; border-radius: 50%; background: rgba(244,239,230,.16); }
+.call-bottom i.end { background: var(--live); width: 2.8rem; border-radius: 999px; }
+.self { display: none; position: absolute; z-index: 2; right: 3%; bottom: 14%; width: 17%; aspect-ratio: 4 / 5; border-radius: var(--r-sm); overflow: hidden; border: 1px solid rgba(255,255,255,.25); }
+.self img { width: 100%; height: 100%; object-fit: cover; }
+.view { position: absolute; z-index: 3; right: 4%; top: 2.5%; padding: .3rem .8rem; border-radius: 999px; font-size: .72rem; font-weight: 600; display: grid; }
+.view span { grid-area: 1 / 1; transition: opacity .4s; }
+.view .they { opacity: 0; color: var(--safe); }
+.stage .veil-ui { position: absolute; z-index: 4; top: 11%; left: 50%; width: 88%; font-size: .62rem; transform: translateX(-50%); transition: opacity .5s var(--spring), transform .7s var(--spring); }
+.stage .card, .caption, .chips { opacity: 0; transform: translateY(1rem) scale(.98); transition: opacity .5s var(--spring), transform .7s var(--spring); }
+.stage .bodies { display: grid; } .stage .bodies > * { grid-area: 1 / 1; transition: opacity .5s var(--spring); }
+.stage .personal { opacity: 0; }
+.caption { position: absolute; z-index: 3; left: 4%; bottom: 16%; width: max-content; max-width: 72%; padding: .5rem .9rem; border-radius: var(--r-sm); font-size: clamp(.6rem, 1vw, .85rem); }
+.caption b { color: var(--honey-hi); font-weight: 600; }
+.ghost { position: absolute; z-index: 3; top: 11%; left: 6%; width: 88%; height: 50%; background: rgba(11,12,14,.3); border: 1.5px dashed rgba(244,239,230,.45); border-radius: var(--r-md); display: grid; place-items: center; text-align: center; padding: 1rem; font-size: clamp(.6rem, 1vw, .85rem); color: rgba(244,239,230,.85); opacity: 0; transform: scale(.97); transition: opacity .5s var(--spring), transform .7s var(--spring); }
+.chips { position: absolute; z-index: 4; left: 4%; right: 4%; bottom: 15%; display: flex; flex-wrap: wrap; gap: .4rem; }
+.chips span { padding: .3rem .7rem; border-radius: 999px; font-size: clamp(.55rem, .9vw, .76rem); font-weight: 500; }
+
+.film[data-scene="0"] .step:nth-child(1), .film[data-scene="1"] .step:nth-child(2), .film[data-scene="2"] .step:nth-child(3), .film[data-scene="3"] .step:nth-child(4) { opacity: 1; transform: none; pointer-events: auto; }
+.film[data-scene="0"] .caption, .film[data-scene="1"] .caption { opacity: 1; transform: none; }
+.film[data-scene="1"] .stage .card, .film[data-scene="3"] .stage .card { opacity: 1; transform: none; }
+.film[data-scene="2"] .stage .veil-ui { opacity: 0; transform: translateX(-50%) scale(.97); }
+.film[data-scene="2"] .ghost { opacity: 1; transform: none; }
+.film[data-scene="2"] .view .you { opacity: 0; } .film[data-scene="2"] .view .they { opacity: 1; }
+.film[data-scene="3"] .chips { opacity: 1; transform: none; }
+.film[data-scene="3"] .stage .general { opacity: 0; } .film[data-scene="3"] .stage .personal { opacity: 1; }
+
+@media (min-width: 1000px) {
+  .film-pin { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: center; gap: var(--s5); padding-block: 5rem var(--s4); }
+  .film-text { min-height: 19rem; }
+  .step .lede { font-size: clamp(1.05rem, 1.25vw, 1.3rem); }
+  .stage { max-height: 76svh; aspect-ratio: 16 / 10; }
+  .self { display: block; }
+  .view { right: auto; left: 3%; top: 12%; }
+  .chips { right: 24%; bottom: 17%; }
+  .stage .veil-ui { top: 9%; width: min(56%, 25rem); font-size: clamp(.6rem, 1.05vw, .82rem); }
+  .ghost { top: 9%; left: 50%; width: min(56%, 25rem); height: 46%; margin-left: calc(min(56%, 25rem) / -2); }
+  .caption { max-width: 64%; }
+  .rail { display: flex; gap: .4rem; position: absolute; left: 0; bottom: -2.5rem; }
+  .rail i { width: 2.4rem; height: 3px; border-radius: 3px; background: var(--line); transition: background-color .4s; }
+  .film[data-scene="0"] .rail i:nth-child(1), .film[data-scene="1"] .rail i:nth-child(-n+2), .film[data-scene="2"] .rail i:nth-child(-n+3), .film[data-scene="3"] .rail i { background: var(--honey); }
+}
+
+/* ---------- who it's for ---------- */
+.for { padding-block: var(--s6); display: grid; gap: var(--s5); }
+.for-head { display: grid; gap: var(--s2); max-width: 46rem; }
+.for-grid { display: grid; gap: var(--s3); }
+.shot { position: relative; border-radius: var(--r-lg); overflow: hidden; min-height: 26rem; display: grid; align-items: end; isolation: isolate; }
+.shot > img { position: absolute; inset: -8% 0; width: 100%; height: 116%; object-fit: cover; z-index: -2; transform: translateY(calc(var(--par, 0) * 1px)); will-change: transform; }
+.shot::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(to top, rgba(11,12,14,.75), transparent 55%), linear-gradient(rgba(242,184,75,.14), rgba(242,184,75,.14)); mix-blend-mode: multiply; }
+.shot figcaption { margin: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r-md); display: grid; gap: .3rem; }
+.shot figcaption p { color: rgba(244,239,230,.85); font-size: .95rem; line-height: 1.55; }
+.shot.words { background: var(--ink-2); border: 1px solid var(--line); padding: var(--s4); align-items: stretch; }
+.shot.words ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); align-content: center; }
+.shot.words li { display: grid; gap: .25rem; padding-left: var(--s3); border-left: 2px solid var(--honey); }
+.shot.words li p { color: var(--muted); font-size: .95rem; line-height: 1.55; }
+figure { margin: 0; }
+@media (min-width: 900px) { .for-grid { grid-template-columns: 1.1fr .9fr 1fr; } .shot { min-height: clamp(30rem, 68vh, 48rem); } .shot.b { margin-top: var(--s5); } }
+
+/* ---------- honest privacy ---------- */
+.privacy { padding-block: var(--s6); background: var(--ink-2); border-block: 1px solid var(--line); }
+.privacy-in { display: grid; gap: var(--s5); }
+.privacy-copy { display: grid; gap: var(--s2); align-content: start; }
+.tests { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
+.tests li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--ink-3); border: 1px solid var(--line); }
+.tests svg { width: 1.3rem; height: 1.3rem; color: var(--safe); }
+.tests small { color: var(--muted); font-size: .82rem; }
+.tests .ok { color: var(--safe); font-weight: 600; font-size: .85rem; }
+.cant { margin-top: var(--s2); padding: var(--s3); border-radius: var(--r-md); border: 1px dashed var(--line); color: var(--muted); font-size: .95rem; line-height: 1.6; }
+.cant strong { color: var(--bone); }
+@media (min-width: 1000px) { .privacy-in { grid-template-columns: 1fr 1fr; align-items: center; } }
+
+/* ---------- pricing ---------- */
+.price { position: relative; padding-block: var(--s6); overflow: hidden; isolation: isolate; }
+.price::before { content: ""; position: absolute; inset: 0; z-index: -1; background:
+  radial-gradient(38% 55% at 22% 40%, rgba(242,184,75,.42), transparent 70%),
+  radial-gradient(34% 50% at 80% 70%, rgba(255,107,94,.22), transparent 70%),
+  radial-gradient(30% 40% at 62% 15%, rgba(248,206,122,.2), transparent 70%); }
+.price-in { display: grid; gap: var(--s4); justify-items: center; text-align: center; }
+.plans { display: grid; gap: var(--s3); width: 100%; max-width: 62rem; text-align: left; }
+.plan { padding: var(--s4); border-radius: var(--r-lg); display: grid; gap: var(--s2); align-content: start; }
+.plan .amount { font: 700 clamp(2.4rem, 4vw, 3.6rem)/1 var(--display); letter-spacing: -0.03em; }
+.plan .amount small { font: 500 1rem var(--text); color: var(--muted); letter-spacing: 0; }
+.plan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; color: rgba(244,239,230,.85); font-size: .95rem; }
+.plan li { padding-left: 1.5rem; position: relative; line-height: 1.5; }
+.plan li::before { content: ""; position: absolute; left: 0; top: .5em; width: .7rem; height: .4rem; border-left: 2px solid var(--honey); border-bottom: 2px solid var(--honey); transform: rotate(-45deg); }
+@media (min-width: 820px) { .plans { grid-template-columns: 1fr 1fr; } }
+
+/* ---------- closing ---------- */
+.close { padding-block: var(--s6); text-align: center; display: grid; gap: var(--s3); justify-items: center; }
+.close h2 { max-width: 16em; }
+footer { border-top: 1px solid var(--line); padding-block: var(--s3); color: var(--muted); font-size: .85rem; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); justify-content: space-between; }
+footer a { text-decoration: none; transition: color .2s; }
+footer a:hover, footer a:focus-visible { color: var(--bone); } footer a:active { color: var(--honey); }
+
+/* ---------- reveal on scroll ---------- */
+[data-reveal] { opacity: 0; transform: translateY(2rem); transition: opacity .8s var(--spring), transform 1s var(--spring); transition-delay: calc(var(--i, 0) * 90ms); }
+[data-reveal].in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  [data-reveal], .hero .card li { opacity: 1; transform: none; }
+  .film { height: auto; } .film-pin { position: static; height: auto; padding-block: var(--s6); }
+  .film-text { min-height: 0; display: grid; gap: var(--s4); } .step { position: static; opacity: 1; transform: none; pointer-events: auto; }
+  .stage { transform: none; } .stage .card, .caption { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="nav" data-preset="smoke">
+  <a class="brand" href="#top" aria-label="Veil, back to top"><img src="img/icon.svg" alt="" width="28" height="28">Veil</a>
+  <nav aria-label="Main">
+    <ul class="nav-links">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#for">Who it's for</a></li>
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+    </ul>
+  </nav>
+  <a class="btn btn-primary" href="https://github.com/NdireS/veil-releases/releases/latest/download/Veil-Setup.exe">Download</a>
+</header>
+
+<main id="main">
+<section class="hero glass-scope" id="top">
+  <div class="hero-photo" data-parallax="0.12"><img src="img/hero.jpg" alt="A woman in a blazer smiles calmly at her laptop during a video interview, lit by a warm desk lamp." width="1344" height="752" fetchpriority="high"></div>
+  <div class="wrap hero-in">
+    <div class="hero-copy">
+      <p class="eyebrow" data-reveal>Your quiet advantage on every call</p>
+      <h1 data-reveal style="--i:1">Walk into every call <em>ready.</em></h1>
+      <p class="lede" data-reveal style="--i:2">Veil listens to your interview, meeting or sales call and puts the right answer on your screen in seconds. Only you can see it.</p>
+      <div class="cta-row" data-reveal style="--i:3">
+        <a class="btn btn-primary" href="https://github.com/NdireS/veil-releases/releases/latest/download/Veil-Setup.exe">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7.1L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn btn-ghost glass" data-preset="droplet" href="#how">See how it works</a>
+      </div>
+      <p class="fine" data-reveal style="--i:4">Free to try for 10 minutes. No card needed. Windows 10 and 11.</p>
+    </div>
+
+    <div class="veil-ui" aria-hidden="true" data-reveal style="--i:4">
+      <div class="pill glass" data-preset="smoke"><img src="img/icon.svg" alt=""><span>Hide</span><span class="sw"><i></i>Hidden from share</span><span class="rec">Listening</span></div>
+      <div class="card glass" data-preset="smoke">
+        <p class="q">“Why should we hire you for this role?”</p>
+        <ul>
+          <li>Lead with the result: you <b>cut onboarding time by 40%</b> in your last role.</li>
+          <li>Tie it to their need: they're scaling the support team this year.</li>
+          <li>Close with intent: you want to build that playbook here.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="strip" aria-label="At a glance">
+  <ul class="wrap">
+    <li data-reveal><strong>Seconds</strong><span>from question to answer</span></li>
+    <li data-reveal style="--i:1"><strong>Hidden</strong><span>from your screen share</span></li>
+    <li data-reveal style="--i:2"><strong>On your PC</strong><span>is where your meetings stay</span></li>
+    <li data-reveal style="--i:3"><strong>KES 1,000</strong><span>for 30 days, after a free trial</span></li>
+  </ul>
+</section>
+
+<section class="film glass-scope" id="how" data-scene="0" aria-label="How Veil works">
+  <div class="film-pin wrap">
+    <div class="film-text">
+      <article class="step">
+        <p class="eyebrow">01 · It listens</p>
+        <h2>Never miss the question.</h2>
+        <p class="lede">Veil hears both sides of the call and follows along, so you can keep your eyes on the person and your mind on the conversation.</p>
+      </article>
+      <article class="step">
+        <p class="eyebrow">02 · It answers</p>
+        <h2>The right words, right when you need them.</h2>
+        <p class="lede">Press one shortcut, or type a question. A clear answer appears in seconds, short enough to glance at and say in your own voice.</p>
+      </article>
+      <article class="step">
+        <p class="eyebrow">03 · It stays private</p>
+        <h2>You see Veil. They don't.</h2>
+        <p class="lede">Share your whole screen and Veil is left out of it. A switch on the pill always tells you whether it's hidden or visible.</p>
+      </article>
+      <article class="step">
+        <p class="eyebrow">04 · It knows you</p>
+        <h2>Answers built from your own story.</h2>
+        <p class="lede">Add your CV, slides and notes before the call. Veil uses them, so the answer sounds like you and your work, not a textbook.</p>
+      </article>
+      <div class="rail" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    </div>
+
+    <div class="stage" aria-hidden="true">
+      <img class="call-main" src="img/call.jpg" alt="" loading="lazy" width="896" height="1120">
+      <div class="call-top"><span>Interview · Product Manager</span></div>
+      <div class="view glass" data-preset="smoke"><span class="you">Your screen</span><span class="they">What they see</span></div>
+      <div class="self"><img src="img/self.jpg" alt="" loading="lazy"></div>
+      <div class="ghost">Veil is here on your screen.<br>It isn't in the share.</div>
+      <div class="veil-ui">
+        <div class="pill glass" data-preset="smoke"><img src="img/icon.svg" alt=""><span>Hide</span><span class="sw"><i></i>Hidden from share</span><span class="rec">Listening</span></div>
+        <div class="card glass" data-preset="smoke">
+          <div class="bodies">
+            <div class="general">
+              <p class="q">“Tell me about a time you handled a difficult stakeholder.”</p>
+              <ul><li><b>Situation:</b> name the project and what was at stake.</li><li><b>Action:</b> the one thing you did that changed their mind.</li><li><b>Result:</b> a number, and what you'd repeat.</li></ul>
+            </div>
+            <div class="personal">
+              <span class="tag">From your CV</span>
+              <ul><li>The <b>2025 billing migration</b>: finance wanted the date moved.</li><li>You set up a weekly 15-minute check-in and one shared tracker.</li><li>Shipped on time. The finance lead <b>sponsored your next project</b>.</li></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption glass" data-preset="smoke"><b>Interviewer:</b> Tell me about a time you handled a difficult stakeholder.</div>
+      <div class="chips"><span class="glass" data-preset="smoke">CV.pdf</span><span class="glass" data-preset="smoke">Role description.docx</span><span class="glass" data-preset="smoke">Portfolio.pptx</span></div>
+      <div class="call-bottom"><i></i><i></i><i></i><i class="end"></i></div>
+    </div>
+  </div>
+</section>
+
+<section class="for wrap" id="for">
+  <div class="for-head">
+    <p class="eyebrow" data-reveal>Who it's for</p>
+    <h2 data-reveal style="--i:1">Confidence isn't knowing everything. It's knowing you won't get stuck.</h2>
+  </div>
+  <div class="for-grid glass-scope">
+    <figure class="shot" data-reveal>
+      <img src="img/self.jpg" alt="A woman at her desk in the evening smiles with relief beside her laptop and notebook." loading="lazy" width="896" height="1120" data-parallax-img>
+      <figcaption class="glass" data-preset="smoke"><h3>Interviews</h3><p>Stay calm on the hard questions. Veil keeps your best examples one glance away.</p></figcaption>
+    </figure>
+    <figure class="shot b" data-reveal style="--i:1">
+      <img src="img/call.jpg" alt="A man leads a video call from a standing desk, gesturing calmly as he speaks." loading="lazy" width="896" height="1120" data-parallax-img>
+      <figcaption class="glass" data-preset="smoke"><h3>Sales and client calls</h3><p>Answer the pricing question, the objection and the technical detail without saying “I'll get back to you.”</p></figcaption>
+    </figure>
+    <div class="shot words" data-reveal style="--i:2">
+      <ul>
+        <li><h3>Meetings</h3><p>Asked for a number you don't have in your head? It's on your screen before the pause gets awkward.</p></li>
+        <li><h3>Any topic</h3><p>Make a mode for each kind of call, with your own instructions for how answers should sound.</p></li>
+        <li><h3>Your language</h3><p>Choose the language of the call in Settings.</p></li>
+        <li><h3>Less to remember</h3><p>Keep notes as you go. They stay on your PC, with the rest of your meetings.</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="privacy" id="privacy">
+  <div class="wrap privacy-in">
+    <div class="privacy-copy">
+      <p class="eyebrow" data-reveal>Privacy, honestly</p>
+      <h2 data-reveal style="--i:1">Tested in real calls, not just promised.</h2>
+      <p class="lede" data-reveal style="--i:2">We shared a screen with Veil open and watched from a second laptop. Veil also checks your own PC and tells you if it can't hide there.</p>
+      <p class="cant" data-reveal style="--i:3"><strong>What Veil can't hide from:</strong> a phone or camera pointed at your screen, or someone in the room. Recordings and the Zoom desktop app haven't been tested yet. Do a quick test call in your own meeting app before you rely on it.</p>
+    </div>
+    <ul class="tests">
+      <li data-reveal><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span><strong>Google Meet</strong><br><small>Chrome · entire screen, window, tab</small></span><span class="ok">Hidden</span></li>
+      <li data-reveal style="--i:1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span><strong>Microsoft Teams</strong><br><small>Desktop app · entire screen, window</small></span><span class="ok">Hidden</span></li>
+      <li data-reveal style="--i:2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span><strong>Zoom</strong><br><small>In the browser · entire screen, window</small></span><span class="ok">Hidden</span></li>
+      <li data-reveal style="--i:3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span><strong>Your meetings</strong><br><small>Transcripts and notes</small></span><span class="ok">Stay on your PC</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="price glass-scope" id="pricing">
+  <div class="wrap price-in">
+    <p class="eyebrow" data-reveal>Pricing</p>
+    <h2 data-reveal style="--i:1">Try it first. Pay only if it helps.</h2>
+    <div class="plans">
+      <div class="plan glass" data-preset="frosted" data-reveal style="--i:2">
+        <h3>Free trial</h3>
+        <p class="amount">10 min <small>of answers</small></p>
+        <ul><li>Everything in Veil, nothing held back</li><li>Starts the first time you use it</li><li>No card needed</li></ul>
+      </div>
+      <div class="plan glass" data-preset="frosted" data-reveal style="--i:3">
+        <h3>Veil</h3>
+        <p class="amount">KES 1,000 <small>for 30 days</small></p>
+        <ul><li>Smart and Fast answers</li><li>Your files, modes and notes</li><li>Pay securely through Paystack. Fair-use limits apply</li></ul>
+        <a class="btn btn-primary" href="https://github.com/NdireS/veil-releases/releases/latest/download/Veil-Setup.exe">Download for Windows</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="close wrap">
+  <h2 data-reveal>Your next call is coming. Walk in ready.</h2>
+  <a class="btn btn-primary" data-reveal style="--i:1" href="https://github.com/NdireS/veil-releases/releases/latest/download/Veil-Setup.exe">Download Veil for Windows</a>
+  <p class="fine" data-reveal style="--i:2">Use Veil where the rules of your workplace, school or interview allow it.</p>
+</section>
+</main>
+
+<footer>
+  <div class="wrap"><span>© 2026 Veil</span><span><a href="https://github.com/NdireS/veil-releases/releases">All versions</a></span></div>
+</footer>
+
+<script>
+(() => {
+  const root = document.documentElement
+  if ((navigator.hardwareConcurrency || 8) <= 4 || matchMedia('(pointer: coarse)').matches) root.classList.add('lite')
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  // Blur only runs while a glass area is on screen.
+  const live = new IntersectionObserver((es) => es.forEach((e) => e.target.classList.toggle('glass-live', e.isIntersecting)), { rootMargin: '200px' })
+  document.querySelectorAll('.glass-scope').forEach((s) => live.observe(s))
+
+  const reveal = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); reveal.unobserve(e.target) } }), { threshold: 0.15 })
+  document.querySelectorAll('[data-reveal]').forEach((el) => reveal.observe(el))
+
+  const nav = document.getElementById('nav')
+  const film = document.querySelector('.film')
+  const stage = film.querySelector('.stage')
+  const heroPhoto = document.querySelector('.hero-photo')
+  const shots = [...document.querySelectorAll('[data-parallax-img]')]
+  const SCENES = 4
+  let queued = false
+
+  const frame = () => {
+    queued = false
+    const vh = innerHeight
+    nav.classList.toggle('glass', scrollY > 40)
+    if (still) return
+    if (scrollY < vh * 1.2) heroPhoto.style.transform = `translateY(${scrollY * 0.12}px)`
+    const r = film.getBoundingClientRect()
+    const p = Math.min(1, Math.max(0, -r.top / (r.height - vh)))
+    film.dataset.scene = Math.min(SCENES - 1, Math.floor(p * SCENES))
+    stage.style.setProperty('--p', p.toFixed(3))
+    stage.style.setProperty('--enter', Math.min(1, Math.max(0, 1 - r.top / vh)).toFixed(3)) // the screen tilts up as it arrives
+    for (const img of shots) {
+      const b = img.parentElement.getBoundingClientRect()
+      if (b.bottom > 0 && b.top < vh) img.style.setProperty('--par', (((b.top + b.height / 2) / vh - 0.5) * -40).toFixed(1))
+    }
+  }
+  const onScroll = () => { if (!queued) { queued = true; requestAnimationFrame(frame) } }
+  addEventListener('scroll', onScroll, { passive: true })
+  addEventListener('resize', onScroll)
+  frame()
+})()
+</script>
+</body>
+</html>
